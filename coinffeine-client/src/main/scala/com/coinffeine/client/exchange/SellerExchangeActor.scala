@@ -1,5 +1,7 @@
 package com.coinffeine.client.exchange
 
+import com.coinffeine.common
+
 import scala.util.{Try, Failure}
 
 import akka.actor._
@@ -15,27 +17,30 @@ import com.coinffeine.common.FiatCurrency
 /** This actor implements the seller's's side of the exchange. You can find more information about
   * the algorithm at https://github.com/Coinffeine/coinffeine/wiki/Exchange-algorithm
   */
-class SellerExchangeActor[C <: FiatCurrency](exchange: Exchange[C] with SellerUser[C], constants: ProtocolConstants)
-  extends Actor with ActorLogging with Stash {
+class SellerExchangeActor[C <: FiatCurrency](
+    handshake: common.Exchange.Handshake[C]) extends Actor with ActorLogging with Stash {
 
   override def receive: Receive = {
     case StartExchange(messageGateway, resultListeners) =>
-      new InitializedSellerExchange(messageGateway, resultListeners)
+      new InitializedSellerExchange(handshake.startExchange(), messageGateway, resultListeners)
   }
 
-  private class InitializedSellerExchange(messageGateway: ActorRef, listeners: Set[ActorRef]) {
+  private class InitializedSellerExchange(
+      channel: common.Exchange.MicroPaymentChannel[C],
+      messageGateway: ActorRef,
+      listeners: Set[ActorRef]) {
 
-    private val exchangeInfo = exchange.exchangeInfo
+    private val exchange = channel.exchange
     private val forwarding = new MessageForwarding(
-      messageGateway, exchangeInfo.counterpart, exchangeInfo.broker)
+      messageGateway, exchange.her.connection, exchange.broker.connection)
 
     messageGateway ! Subscribe {
-      case ReceiveMessage(PaymentProof(exchangeInfo.`id`, _), exchangeInfo.`counterpart`) => true
+      case ReceiveMessage(PaymentProof(exchange.`id`, _), exchange.her.`connection`) => true
       case _ => false
     }
-    log.info(s"Exchange ${exchangeInfo.id}: Exchange started")
+    log.info(s"Exchange ${exchange.id}: Exchange started")
     forwarding.forwardToCounterpart(StepSignatures(
-      exchangeInfo.id,
+      exchange.id,
       exchange.signStep(1)))
     context.become(waitForPaymentProof(1))
 

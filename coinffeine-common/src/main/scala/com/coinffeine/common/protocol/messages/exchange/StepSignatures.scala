@@ -4,9 +4,10 @@ import com.google.bitcoin.crypto.TransactionSignature
 
 import com.coinffeine.common.protocol.messages.PublicMessage
 import com.coinffeine.common.protocol.TransactionSignatureUtils
+import com.coinffeine.common.Exchange
 
 case class StepSignatures(
-    exchangeId: String, idx0Signature: TransactionSignature, idx1Signature: TransactionSignature)
+    exchangeId: Exchange.Id, idx0Signature: TransactionSignature, idx1Signature: TransactionSignature)
   extends PublicMessage {
 
   override def equals(that: Any) = that match {
@@ -19,7 +20,7 @@ case class StepSignatures(
 
 object StepSignatures {
   def apply(
-      exchangeId: String,
+      exchangeId: Exchange.Id,
       signatures: (TransactionSignature, TransactionSignature)): StepSignatures =
     StepSignatures(exchangeId, signatures._1, signatures._2)
 }

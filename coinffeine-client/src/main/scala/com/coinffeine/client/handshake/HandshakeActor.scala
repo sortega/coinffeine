@@ -6,7 +6,9 @@ import akka.actor.{ActorRef, Props}
 import com.google.bitcoin.core.Sha256Hash
 import com.google.bitcoin.crypto.TransactionSignature
 
-import com.coinffeine.common.FiatCurrency
+import com.coinffeine.common.{Exchange, FiatCurrency}
+import com.coinffeine.common
+import com.coinffeine.common.blockchain.TransactionProcessor
 
 /** A handshake actor is in charge of entering into a value exchange by getting a refundSignature
   * transaction signed and relying on the broker to publish the commitment TX.
@@ -30,15 +32,15 @@ object HandshakeActor {
     */
   case class HandshakeResult(refundSig: Try[TransactionSignature])
 
-  case class RefundSignatureTimeoutException(exchangeId: String) extends RuntimeException(
+  case class RefundSignatureTimeoutException(exchangeId: Exchange.Id) extends RuntimeException(
     s"Timeout waiting for a valid signature of the refund transaction of handshake $exchangeId")
 
   case class CommitmentTransactionRejectedException(
-       exchangeId: String, rejectedTx: Sha256Hash, isOwn: Boolean) extends RuntimeException(
+       exchangeId: Exchange.Id, rejectedTx: Sha256Hash, isOwn: Boolean) extends RuntimeException(
     s"Commitment transaction $rejectedTx (${if (isOwn) "ours" else "counterpart"}) was rejected"
   )
 
-  case class HandshakeAbortedException(exchangeId: String, reason: String) extends RuntimeException(
+  case class HandshakeAbortedException(exchangeId: Exchange.Id, reason: String) extends RuntimeException(
     s"Handshake $exchangeId aborted externally: $reason"
   )
 
@@ -48,6 +50,7 @@ object HandshakeActor {
       * @param handshake        Class that contains the logic to perform the handshake
       * @return                 Actor properties
       */
-    def handshakeActorProps[C <: FiatCurrency](handshake: Handshake[C]): Props
+    def handshakeActorProps[C <: FiatCurrency](
+      handshake: common.Exchange.Handshake[C], processor: TransactionProcessor): Props
   }
 }

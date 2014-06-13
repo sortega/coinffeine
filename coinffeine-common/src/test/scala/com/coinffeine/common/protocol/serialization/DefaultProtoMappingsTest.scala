@@ -74,7 +74,7 @@ class DefaultProtoMappingsTest extends UnitTest with UnitTestNetworkComponent {
     orderSet, orderSetMessage)
 
   val commitmentNotification = CommitmentNotification(
-    exchangeId = "1234",
+    exchangeId = Exchange.Id("1234"),
     buyerTxId = sampleTxId,
     sellerTxId = sampleTxId
   )
@@ -87,7 +87,7 @@ class DefaultProtoMappingsTest extends UnitTest with UnitTestNetworkComponent {
   "Commitment notification" should behave like thereIsAMappingBetween(
     commitmentNotification, commitmentNotificationMessage)
 
-  val commitment = ExchangeCommitment(exchangeId = "1234", commitmentTransaction)
+  val commitment = ExchangeCommitment(exchangeId = Exchange.Id("1234"), commitmentTransaction)
   val commitmentMessage = msg.ExchangeCommitment.newBuilder()
     .setExchangeId("1234")
     .setCommitmentTransaction( txSerialization.serialize(commitmentTransaction))
@@ -95,7 +95,7 @@ class DefaultProtoMappingsTest extends UnitTest with UnitTestNetworkComponent {
 
   "Enter exchange" must behave like thereIsAMappingBetween(commitment, commitmentMessage)
 
-  val exchangeAborted = ExchangeAborted("1234", "a reason")
+  val exchangeAborted = ExchangeAborted(Exchange.Id("1234"), "a reason")
   val exchangeAbortedMessage = msg.ExchangeAborted.newBuilder()
     .setExchangeId("1234")
     .setReason("a reason")
@@ -105,7 +105,7 @@ class DefaultProtoMappingsTest extends UnitTest with UnitTestNetworkComponent {
     exchangeAborted, exchangeAbortedMessage)
 
   val exchangeRejection = ExchangeRejection(
-    exchangeId = "1234",
+    exchangeId = Exchange.Id("1234"),
     reason = "a reason")
   val exchangeRejectionMessage = msg.ExchangeRejection.newBuilder()
     .setExchangeId("1234")
@@ -116,7 +116,7 @@ class DefaultProtoMappingsTest extends UnitTest with UnitTestNetworkComponent {
     exchangeRejection, exchangeRejectionMessage)
 
   val orderMatch = OrderMatch(
-    exchangeId = "1234",
+    exchangeId = Exchange.Id("1234"),
     amount = 0.1 BTC,
     price = 10000 EUR,
     buyer = PeerConnection("buyer", 8080),
@@ -153,7 +153,8 @@ class DefaultProtoMappingsTest extends UnitTest with UnitTestNetworkComponent {
   "Quote request" must behave like thereIsAMappingBetween(quoteRequest, quoteRequestMessage)
 
   val refundTx = new Transaction(UnitTestParams.get())
-  val refundTxSignatureRequest = RefundTxSignatureRequest(exchangeId = "1234", refundTx = refundTx)
+  val refundTxSignatureRequest = RefundTxSignatureRequest(
+    exchangeId = Exchange.Id("1234"), refundTx = refundTx)
   val refundTxSignatureRequestMessage = msg.RefundTxSignatureRequest.newBuilder()
     .setExchangeId("1234")
     .setRefundTx(ByteString.copyFrom(refundTx.bitcoinSerialize()))
@@ -164,7 +165,7 @@ class DefaultProtoMappingsTest extends UnitTest with UnitTestNetworkComponent {
 
   val refundTxSignature = new TransactionSignature(BigInteger.ZERO, BigInteger.ZERO)
   val refundTxSignatureResponse = RefundTxSignatureResponse(
-    exchangeId = "1234",
+    exchangeId = Exchange.Id("1234"),
     refundSignature = refundTxSignature
   )
   val refundTxSignatureResponseMessage = msg.RefundTxSignatureResponse.newBuilder()

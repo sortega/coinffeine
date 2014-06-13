@@ -1,12 +1,14 @@
 package com.coinffeine.client.exchange
 
-import scala.util.{Failure, Success}
-
 import akka.actor._
 
+import com.coinffeine.common
 import com.coinffeine.client.MessageForwarding
 import com.coinffeine.client.exchange.ExchangeActor.{ExchangeSuccess, StartExchange}
 import com.coinffeine.common.FiatCurrency
+import com.coinffeine.common.Exchange.MicroPaymentChannel
+import com.coinffeine.common.blockchain.TransactionProcessor
+import com.coinffeine.common.paymentprocessor.PaymentProcessor
 import com.coinffeine.common.protocol.ProtocolConstants
 import com.coinffeine.common.protocol.gateway.MessageGateway.{ReceiveMessage, Subscribe}
 import com.coinffeine.common.protocol.messages.exchange.{PaymentProof, StepSignatures}
@@ -14,8 +16,10 @@ import com.coinffeine.common.protocol.messages.exchange.{PaymentProof, StepSigna
 /** This actor implements the buyer's side of the exchange. You can find more information about
   * the algorithm at https://github.com/Coinffeine/coinffeine/wiki/Exchange-algorithm
   */
-class BuyerExchangeActor[C <: FiatCurrency](exchange: Exchange[C] with BuyerUser[C], constants: ProtocolConstants)
-  extends Actor with ActorLogging  {
+class BuyerExchangeActor[C <: FiatCurrency](
+    handshake: common.Exchange.Handshake[C],
+    transactionProcessor: TransactionProcessor,
+    paymentProcessor: PaymentProcessor) extends Actor with ActorLogging  {
 
   override def receive: Receive = {
     case StartExchange(messageGateway, resultListeners) =>
@@ -24,56 +28,68 @@ class BuyerExchangeActor[C <: FiatCurrency](exchange: Exchange[C] with BuyerUser
 
   private class InitializedBuyerExchange(messageGateway: ActorRef, listeners: Set[ActorRef]) {
 
-    private val exchangeInfo = exchange.exchangeInfo
+    val exchange = handshake.exchange
+
     private val forwarding = new MessageForwarding(
-      messageGateway, exchangeInfo.counterpart, exchangeInfo.broker)
+      messageGateway, exchange.seller.connection, exchange.broker.connection)
 
     def startExchange(): Unit = {
       subscribeToMessages()
-      context.become(waitForNextStepSignature(1))
-      log.info(s"Exchange ${exchangeInfo.id}: Exchange started")
+      context.become(waitForNextStepSignature(handshake.startExchange()))
+      log.info(s"Exchange ${exchange.id}: Exchange started")
     }
 
     private def subscribeToMessages(): Unit = messageGateway ! Subscribe {
-      case ReceiveMessage(StepSignatures(exchangeInfo.`id`, _, _), exchangeInfo.`counterpart`) => true
+      case ReceiveMessage(StepSignatures(exchange.`id`, _, _), exchange.`seller`.connection) => true
       case _ => false
     }
 
-    private val waitForFinalSignature: Receive = {
+    private def waitForNextStepSignature(channel: MicroPaymentChannel[C]): Receive = {
       case ReceiveMessage(StepSignatures(_, signature0, signature1), _) =>
-        exchange.validateSellersFinalSignature(signature0, signature1) match {
-          case Success(_) =>
-            log.info(s"Exchange ${exchangeInfo.id}: exchange finished with success")
-            // TODO: Publish transaction to blockchain
-            listeners.foreach { _ ! ExchangeSuccess }
-            context.stop(self)
-          case Failure(cause) =>
-            log.warning(s"Received invalid final signature: ($signature0, $signature1). Reason: $cause")
+        val signatures = (signature0, signature1)
+        if (!channel.validateCurrentTransactionSignatures(transactionProcessor, signatures))
+        {
+          import context.dispatcher
+          val paymentProof = for {
+            payment <- paymentProcessor.sendPayment(
+              receiverId = exchange.seller.paymentProcessorAccount,
+              amount = channel.exchange.amounts.stepFiatAmount,
+              comment = s"Payment for ${exchange.id}, step ${channel.currentStep}")
+          } yield PaymentProof(exchange.id, payment.id)
+
+          forwarding.forwardToCounterpart(paymentProof)
+          context.become(nextWait(channel))
+        } else {
+          log.warning(s"Received invalid signatures $signatures in ${channel.currentStep}")
+          // TODO: report the error to the counterpart and recover from this error
         }
     }
 
-    private def waitForNextStepSignature(step: Int): Receive = {
+    private def nextWait(channel: MicroPaymentChannel[C]): Receive =
+      if (channel.isLastStep) waitForFinalSignature(channel.close())
+      else waitForNextStepSignature(channel.nextStep)
+
+    private def waitForFinalSignature(closing: common.Exchange.Closing[C]): Receive = {
       case ReceiveMessage(StepSignatures(_, signature0, signature1), _) =>
-        exchange.validateSellersSignature(step, signature0, signature1) match {
-          case Success(_) =>
-            import context.dispatcher
-            forwarding.forwardToCounterpart(
-              exchange.pay(step).map(payment => PaymentProof (exchangeInfo.id, payment.id)))
-            context.become(nextWait(step))
-          case Failure(cause) =>
-            log.warning(s"Received invalid signature ($signature0, $signature1) in step $step. Reason: $cause")
+        val signatures = (signature0, signature1)
+        if (!closing.validateClosingTransactionSignatures(transactionProcessor, signatures)) {
+          log.info(s"Exchange ${exchange.id}: exchange finished with success")
+          // TODO: Publish transaction to blockchain
+          listeners.foreach { _ ! ExchangeSuccess }
+          context.stop(self)
+        } else {
+          log.warning(s"Received invalid final signature: $signatures")
         }
     }
 
-    private def nextWait(step: Int): Receive =
-      if (step == exchangeInfo.steps) waitForFinalSignature
-      else waitForNextStepSignature(step + 1)
   }
 }
 
 object BuyerExchangeActor {
   trait Component { this: ProtocolConstants.Component =>
-    def exchangeActorProps[C <: FiatCurrency](exchange: Exchange[C] with BuyerUser[C]): Props =
-      Props(new BuyerExchangeActor(exchange, protocolConstants))
+    def exchangeActorProps[C <: FiatCurrency](handshake: common.Exchange.Handshake[C],
+                                              transactionProcessor: TransactionProcessor,
+                                              paymentProcessor: PaymentProcessor): Props =
+      Props(new BuyerExchangeActor(handshake, transactionProcessor, paymentProcessor))
   }
 }
