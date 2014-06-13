@@ -1,5 +1,7 @@
 package com.coinffeine.client.handshake
 
+import com.coinffeine.client.exchange.UserRole
+
 import scala.util.Try
 
 import akka.actor.{ActorRef, Props}
@@ -18,11 +20,15 @@ object HandshakeActor {
   /** Sent to the actor to start the handshake
     *
     * @constructor
+    * @param handshake        Handshake to take part on
+    * @param role             Role played on the handshake
     * @param messageGateway   Communications gateway
     * @param blockchain       Actor to ask for TX confirmations for
     * @param resultListeners  Actors to be notified of the handshake result
     */
   case class StartHandshake(
+      handshake: Exchange.Handshake[_ <: FiatCurrency],
+      role: Exchange.Role,
       messageGateway: ActorRef,
       blockchain: ActorRef,
       resultListeners: Set[ActorRef])
@@ -45,12 +51,7 @@ object HandshakeActor {
   )
 
   trait Component {
-    /** Create the properties of a handshake actor.
-      *
-      * @param handshake        Class that contains the logic to perform the handshake
-      * @return                 Actor properties
-      */
-    def handshakeActorProps[C <: FiatCurrency](
-      handshake: common.Exchange.Handshake[C], processor: TransactionProcessor): Props
+    /** Create the properties of a handshake actor. */
+    def handshakeActorProps: Props
   }
 }

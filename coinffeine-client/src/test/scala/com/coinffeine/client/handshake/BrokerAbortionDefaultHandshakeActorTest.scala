@@ -9,11 +9,8 @@ import com.coinffeine.common.protocol.messages.handshake.ExchangeAborted
 class BrokerAbortionDefaultHandshakeActorTest
   extends DefaultHandshakeActorTest("broker-aborts") {
 
-  override def protocolConstants = ProtocolConstants(
-    commitmentConfirmations = 1,
-    resubmitRefundSignatureTimeout = 10 seconds,
-    refundSignatureAbortTimeout = 10 seconds
-  )
+  override val resubmitRefundSignatureTimeout = 10.seconds
+  override val refundSignatureAbortTimeout = 10.seconds
 
   "Handshakes aborted by the broker" should "make the handshake to fail" in {
     givenActorIsInitialized()

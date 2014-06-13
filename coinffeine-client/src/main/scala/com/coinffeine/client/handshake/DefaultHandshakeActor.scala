@@ -6,21 +6,16 @@ import akka.actor._
 import com.google.bitcoin.core.Sha256Hash
 import com.google.bitcoin.crypto.TransactionSignature
 
-import com.coinffeine.common
 import com.coinffeine.client.MessageForwarding
 import com.coinffeine.client.handshake.DefaultHandshakeActor._
 import com.coinffeine.client.handshake.HandshakeActor._
-import com.coinffeine.common.FiatCurrency
 import com.coinffeine.common.blockchain.TransactionProcessor
 import com.coinffeine.common.blockchain.BlockchainActor._
-import com.coinffeine.common.protocol.ProtocolConstants
 import com.coinffeine.common.protocol.gateway.MessageGateway._
 import com.coinffeine.common.protocol.messages.arbitration.CommitmentNotification
 import com.coinffeine.common.protocol.messages.handshake._
 
-private[handshake] class DefaultHandshakeActor[C <: FiatCurrency](
-    handshake: common.Exchange.Handshake[C],
-    processor: TransactionProcessor)
+private[handshake] class DefaultHandshakeActor(processor: TransactionProcessor)
   extends Actor with ActorLogging {
 
   import context.dispatcher
@@ -30,29 +25,28 @@ private[handshake] class DefaultHandshakeActor[C <: FiatCurrency](
   override def postStop(): Unit = timers.foreach(_.cancel())
 
   override def receive = {
-    case StartHandshake(messageGateway, blockchain, resultListeners) =>
-      new InitializedHandshake(messageGateway, blockchain, resultListeners).startHandshake()
+    case initializationMessage: StartHandshake =>
+      new InitializedHandshake(initializationMessage).startHandshake()
   }
 
-  private class InitializedHandshake(messageGateway: ActorRef,
-                                     blockchain: ActorRef,
-                                     resultListeners: Set[ActorRef]) {
+  private class InitializedHandshake(initializationMessage: StartHandshake) {
+    import initializationMessage._
 
     private val exchange = handshake.exchange
     private val forwarding = new MessageForwarding(
-      messageGateway, exchange.her.connection, exchange.broker.connection)
+      messageGateway, role.her(exchange).connection, exchange.broker.connection)
 
     def startHandshake(): Unit = {
       subscribeToMessages()
       requestRefundSignature()
       scheduleTimeouts()
-      log.info("Handshake {}: Handshake started", exchange.id)
+      log.info("Handshake {}: taking part as {}", exchange.id, role)
       context.become(waitForRefundSignature)
     }
 
     private val signCounterpartRefund: Receive = {
       case ReceiveMessage(RefundTxSignatureRequest(_, refundTransaction), _) =>
-        handshake.signHerRefund(processor, refundTransaction) match {
+        role.signHerRefund(handshake.exchange, processor, refundTransaction) match {
           case Success(refundSignature) =>
             forwarding.forwardToCounterpart(RefundTxSignatureResponse(exchange.id, refundSignature))
             log.info("Handshake {}: Signing refund TX {}", exchange.id,
@@ -65,7 +59,7 @@ private[handshake] class DefaultHandshakeActor[C <: FiatCurrency](
 
     private val receiveSignedRefund: Receive = {
       case ReceiveMessage(RefundTxSignatureResponse(_, refundSignature), _) =>
-        if (handshake.validateHerRefundSignature(processor, refundSignature)) {
+        if (handshake.validateHerSignatureOfMyRefund(processor, refundSignature)) {
           forwarding.forwardToBroker(
             ExchangeCommitment(exchange.id, handshake.myDeposit))
           log.info("Handshake {}: Got a valid refund TX signature", exchange.id)
@@ -130,8 +124,8 @@ private[handshake] class DefaultHandshakeActor[C <: FiatCurrency](
 
     private def subscribeToMessages(): Unit = {
       val id = exchange.id
-      val broker = exchange.broker
-      val counterpart = exchange.her.connection
+      val broker = exchange.broker.connection
+      val counterpart = role.her(exchange).connection
       messageGateway ! Subscribe {
         case ReceiveMessage(RefundTxSignatureRequest(`id`, _), `counterpart`) => true
         case ReceiveMessage(RefundTxSignatureResponse(`id`, _), `counterpart`) => true
@@ -171,10 +165,8 @@ private[handshake] class DefaultHandshakeActor[C <: FiatCurrency](
 }
 
 object DefaultHandshakeActor {
-  trait Component extends HandshakeActor.Component { this: ProtocolConstants.Component =>
-    override def handshakeActorProps[C <: FiatCurrency](
-        handshake: common.Exchange.Handshake[C], processor: TransactionProcessor): Props =
-      Props(new DefaultHandshakeActor(handshake, processor))
+  trait Component extends HandshakeActor.Component {  this: TransactionProcessor.Component =>
+    override def handshakeActorProps: Props = Props(new DefaultHandshakeActor(transactionProcessor))
   }
 
   /** Internal message to remind about resubmitting refund signature requests. */

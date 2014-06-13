@@ -105,8 +105,10 @@ object Exchange {
     def signHerRefund(
         exchange: Exchange[_ <: FiatCurrency],
         processor: TransactionProcessor,
-        tx: Transaction): Try[TransactionSignature] =
+        tx: Transaction): Try[TransactionSignature] = {
+      // TODO: check that refund TX is valid
       Try(processor.sign(tx, 0, me(exchange).bitcoinKey))
+    }
 
     def startHandshake[C <: FiatCurrency](
         processor: TransactionProcessor,
@@ -132,6 +134,8 @@ object Exchange {
 
   object BuyerRole extends Role {
 
+    override def toString = "buyer"
+
     override def me(exchange: Exchange[_ <: FiatCurrency]): PeerInfo = exchange.buyer
 
     override def her(exchange: Exchange[_ <: FiatCurrency]): PeerInfo = exchange.seller
@@ -141,6 +145,8 @@ object Exchange {
   }
 
   object SellerRole extends Role {
+
+    override def toString = "seller"
 
     override def me(exchange: Exchange[_ <: FiatCurrency]): PeerInfo = exchange.seller
 

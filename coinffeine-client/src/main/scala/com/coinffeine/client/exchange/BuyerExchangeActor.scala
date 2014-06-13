@@ -16,26 +16,28 @@ import com.coinffeine.common.protocol.messages.exchange.{PaymentProof, StepSigna
 /** This actor implements the buyer's side of the exchange. You can find more information about
   * the algorithm at https://github.com/Coinffeine/coinffeine/wiki/Exchange-algorithm
   */
-class BuyerExchangeActor[C <: FiatCurrency](
-    handshake: common.Exchange.Handshake[C],
+class BuyerExchangeActor(
     transactionProcessor: TransactionProcessor,
     paymentProcessor: PaymentProcessor) extends Actor with ActorLogging  {
 
   override def receive: Receive = {
-    case StartExchange(messageGateway, resultListeners) =>
-      new InitializedBuyerExchange(messageGateway, resultListeners).startExchange()
+    case StartExchange(channel, messageGateway, resultListeners) =>
+      new InitializedBuyerExchange(channel, messageGateway, resultListeners).startExchange()
   }
 
-  private class InitializedBuyerExchange(messageGateway: ActorRef, listeners: Set[ActorRef]) {
+  private class InitializedBuyerExchange[C <: FiatCurrency](
+      initialChannel: MicroPaymentChannel[C],
+      messageGateway: ActorRef,
+      listeners: Set[ActorRef]) {
 
-    val exchange = handshake.exchange
+    private val exchange = initialChannel.exchange
 
     private val forwarding = new MessageForwarding(
       messageGateway, exchange.seller.connection, exchange.broker.connection)
 
     def startExchange(): Unit = {
       subscribeToMessages()
-      context.become(waitForNextStepSignature(handshake.startExchange()))
+      context.become(waitForNextStepSignature(initialChannel))
       log.info(s"Exchange ${exchange.id}: Exchange started")
     }
 
@@ -87,9 +89,8 @@ class BuyerExchangeActor[C <: FiatCurrency](
 
 object BuyerExchangeActor {
   trait Component { this: ProtocolConstants.Component =>
-    def exchangeActorProps[C <: FiatCurrency](handshake: common.Exchange.Handshake[C],
-                                              transactionProcessor: TransactionProcessor,
+    def exchangeActorProps[C <: FiatCurrency](transactionProcessor: TransactionProcessor,
                                               paymentProcessor: PaymentProcessor): Props =
-      Props(new BuyerExchangeActor(handshake, transactionProcessor, paymentProcessor))
+      Props(new BuyerExchangeActor(transactionProcessor, paymentProcessor))
   }
 }

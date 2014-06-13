@@ -5,6 +5,7 @@ import com.google.bitcoin.core._
 import com.coinffeine.client.ExchangeInfo
 import com.coinffeine.common.FiatCurrency
 
+@deprecated
 class BuyerHandshake[C <: FiatCurrency](exchange: ExchangeInfo[C], userWallet: Wallet)
   extends DefaultHandshake(
     exchange,

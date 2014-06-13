@@ -13,6 +13,7 @@ import com.coinffeine.client.ExchangeInfo
 import com.coinffeine.common.{Currency, FiatCurrency, BitcoinAmount}
 import com.coinffeine.common.Currency.Implicits._
 
+@deprecated
 abstract class DefaultHandshake[C <: FiatCurrency](
     val exchangeInfo: ExchangeInfo[C],
     amountToCommit: BitcoinAmount,

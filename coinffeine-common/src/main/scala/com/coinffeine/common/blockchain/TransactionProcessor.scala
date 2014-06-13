@@ -11,7 +11,7 @@ trait TransactionProcessor {
   def createTransaction(inputs: Seq[TransactionOutput],
                         outputs: Seq[(ECKey, BitcoinAmount)],
                         lockTime: Option[Long] = None): Transaction
-  
+
   def multisign(tx: Transaction, inputIndex: Int, keys: ECKey*): TransactionSignature
 
   def sign(tx: Transaction, inputIndex: Int, key: ECKey): TransactionSignature
@@ -25,5 +25,11 @@ trait TransactionProcessor {
     signatures.productIterator.toSeq.zipWithIndex.forall {
       case (sign: TransactionSignature, index) => isValidSignature(transaction, index, sign)
     }
+  }
+}
+
+object TransactionProcessor {
+  trait Component {
+    def transactionProcessor: TransactionProcessor
   }
 }
